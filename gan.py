@@ -361,6 +361,7 @@ def main(hparams):
 
 if __name__ == '__main__':
     parser = ArgumentParser()
+    # Training params
     parser.add_argument("--lr", type=float, default=0.0002, help="adam: learning rate")
     parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
@@ -371,19 +372,20 @@ if __name__ == '__main__':
     parser.add_argument('--info', metavar='DIR', default="train_log", help='path to logging output')
     parser.add_argument('--gpus', type=int, default=1, help='how many gpus')
 
-    parser.add_argument('--types', type=int, default=1)
-    parser.add_argument('--threshold', type=float, default=0.5)
-    parser.add_argument('--pathology', default='All')
-    parser.add_argument('--shape', type=int, default=32)
-    parser.add_argument('--folds', type=int, default=5)
-    parser.add_argument('--batch', type=int, default=32)
-
-    parser.add_argument('--debug', action='store_true', help='use fast mode')
-    
-    # Inference purpose
+    # Inference params
     parser.add_argument('--load', action='store_true', help='path to logging output')
     parser.add_argument('--pred', action='store_true', help='run predict')
     parser.add_argument('--eval', action='store_true', help='run offline evaluation instead of training')
+
+    # Dataset params
+    parser.add_argument('--threshold', type=float, default=0.5)
+    parser.add_argument('--pathology', default='All')
+    parser.add_argument('--types', type=int, default=1)
+    parser.add_argument('--shape', type=int, default=32)
+    parser.add_argument('--folds', type=int, default=5)
+    parser.add_argument('--batch', type=int, default=32)
+    parser.add_argument('--debug', action='store_true', help='use fast mode')
+    
     hparams = parser.parse_args()
 
     main(hparams)
