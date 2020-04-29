@@ -348,18 +348,23 @@ class SGAN(LightningModule):
             # pred, prob = self.dis(fake_imgs)
             # g_loss = (self.adversarial_loss(pred, fake) +  self.probability_loss(prob, p)) 
             # # g_loss = (-torch.mean(pred) +  self.probability_loss(prob, p)) 
-            true = torch.zeros_like(p)
-            real_pred, real_prob = self.dis(imgs)
-            real_loss = (self.adversarial_loss(real_pred, true) +  self.probability_loss(real_prob, lbls)) 
-            # real_loss = (-torch.mean(real_pred) +  self.probability_loss(real_prob, lbls)) 
+            # true = torch.zeros_like(p)
+            # real_pred, real_prob = self.dis(imgs)
+            # real_loss = (self.adversarial_loss(real_pred, true) +  self.probability_loss(real_prob, lbls)) 
+            # # real_loss = (-torch.mean(real_pred) +  self.probability_loss(real_prob, lbls)) 
 
-            # how well can it label as fake?
+            # # how well can it label as fake?
+            # fake = torch.ones_like(p)
+            # fake_pred, fake_prob = self.dis(fake_imgs) #.detach()
+            # fake_loss = (self.adversarial_loss(fake_pred, fake) +  self.probability_loss(fake_prob, p)) 
+            # g_loss = (real_loss + fake_loss) / 2
+
             fake = torch.ones_like(p)
             fake_pred, fake_prob = self.dis(fake_imgs) #.detach()
             fake_loss = (self.adversarial_loss(fake_pred, fake) +  self.probability_loss(fake_prob, p)) 
+            g_loss = (fake_loss + nn.L1Loss()(fake_imgs, imgs)) / 2
 
-            g_loss = (real_loss + fake_loss) / 2
-            
+
 
             tqdm_dict = {'g_loss': g_loss}
             output = OrderedDict({
