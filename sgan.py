@@ -215,7 +215,7 @@ class Generator(nn.Module):
             nn.Conv2d(1024, 512, 3, stride=1, padding=1),
             # nn.Conv2d(1024, 4*512, 3, stride=1, padding=1),
             # nn.PixelShuffle(2),
-            nn.Dropout(0.25),
+            # nn.Dropout(0.25),
             nn.Conv2d(512, 512, 3, stride=1, padding=1),
             nn.Conv2d(512, 512, 3, stride=1, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -225,7 +225,7 @@ class Generator(nn.Module):
             # nn.ConvTranspose2d(512, 256, 3, stride=2, padding=1, output_padding=1),
             # nn.Conv2d(512, 4*256, 3, stride=1, padding=1),
             # nn.PixelShuffle(2),
-            nn.Dropout(0.25),
+            # nn.Dropout(0.25),
             nn.Conv2d(256, 256, 3, stride=1, padding=1),
             nn.Conv2d(256, 256, 3, stride=1, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -273,22 +273,23 @@ class Discriminator(nn.Module):
         self.discrim.features.conv0 = nn.Conv2d(1, 64, 
             kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False)
         self.discrim.classifier = nn.Sequential(
-            nn.Dropout(0.25),
-            nn.Identity(),
+            # nn.Dropout(0.25),
+            nn.LeakyReLU(0.2, inplace=True),
+            # nn.Identity(),
             # nn.Linear(1024, self.hparams.types),  # 5 diseases
             # nn.Sigmoid(),
         )
         print(self.discrim)
 
-        self.adv_layer = nn.Sequential(nn.Linear(1024, self.hparams.types), nn.Sigmoid())
-        self.aux_layer = nn.Sequential(nn.Linear(1024, self.hparams.types), nn.Sigmoid())
+        self.adv_layer = nn.Sequential(nn.Linear(1024, self.hparams.types), nn.Tanh())
+        self.aux_layer = nn.Sequential(nn.Linear(1024, self.hparams.types), nn.Tanh())
 
     def forward(self, img):
         # out = self.conv_blocks(img)
         # out = out.view(out.shape[0], -1)
         out = self.discrim(img)
-        pred = self.adv_layer(out)
-        prob = self.aux_layer(out)
+        pred = self.adv_layer(out) / 2.0 + 0.5
+        prob = self.aux_layer(out) / 2.0 + 0.5
 
         return pred, prob
 
@@ -339,14 +340,26 @@ class SGAN(LightningModule):
 
         # train generator
         if optimizer_idx == 0:
-            # ground truth result (ie: all fake)
-            # put on GPU because we created this tensor inside training_loop
-            fake = torch.ones_like(p)
+            # # ground truth result (ie: all fake)
+            # # put on GPU because we created this tensor inside training_loop
+            # fake = torch.ones_like(p)
 
-            # adversarial loss is binary cross-entropy
-            pred, prob = self.dis(fake_imgs)
-            g_loss = (self.adversarial_loss(pred, fake) +  self.probability_loss(prob, p)) 
-            # g_loss = (-torch.mean(pred) +  self.probability_loss(prob, p)) 
+            # # adversarial loss is binary cross-entropy
+            # pred, prob = self.dis(fake_imgs)
+            # g_loss = (self.adversarial_loss(pred, fake) +  self.probability_loss(prob, p)) 
+            # # g_loss = (-torch.mean(pred) +  self.probability_loss(prob, p)) 
+            true = torch.zeros_like(p)
+            real_pred, real_prob = self.dis(imgs)
+            real_loss = (self.adversarial_loss(real_pred, true) +  self.probability_loss(real_prob, lbls)) 
+            # real_loss = (-torch.mean(real_pred) +  self.probability_loss(real_prob, lbls)) 
+
+            # how well can it label as fake?
+            fake = torch.ones_like(p)
+            fake_pred, fake_prob = self.dis(fake_imgs) #.detach()
+            fake_loss = (self.adversarial_loss(fake_pred, fake) +  self.probability_loss(fake_prob, p)) 
+
+            g_loss = (real_loss + fake_loss) / 2
+            
 
             tqdm_dict = {'g_loss': g_loss}
             output = OrderedDict({
