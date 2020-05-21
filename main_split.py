@@ -123,8 +123,8 @@ class MSGGAN(LightningModule):
             if hasattr(m, 'bias') and m.bias is not None:
                 nn.init.constant_(m.bias.data, 0.0)
 
-        self.gen.apply(weights_init_normal)
-        self.dis.apply(weights_init_normal)
+        # self.gen.apply(weights_init_normal)
+        # self.dis.apply(weights_init_normal)
 
         self.loss_fn = WGAN_GP(dis=self.dis)
         # self.loss_fn = LSGAN(dis=self.dis)
@@ -190,35 +190,38 @@ class MSGGAN(LightningModule):
         real_p = self.cls(imgs[-1])
         bce_real = nn.BCELoss()(real_p, lbls)
 
-        g_loss = self.loss_fn.gen_loss(imgs, fake_imgs)
-        # Calculate w1 and w2
-        e1 = 0 #self.hparams.e1
-        e2 = 2 #self.hparams.e2
-        assert e2 > e1
-        ep = self.current_epoch
-        if ep < e1:
-            w1 = 1
-            w2 = 0
-        elif ep > e2:
-            w1 = 0
-            w2 = 1
-        else:
-            w2 = (ep-e1) / (e2-e1)
-            w1 = (e2-ep) / (e2-e1)
-        ell1_loss = 0
-        for fake_ones, ones in zip(fake_imgs, imgs): #torch.mean(torch.abs(fake_imgs - imgs))
-            ell1_loss += torch.nn.L1Loss()(fake_ones, ones) 
-        g_loss *= w2
-        g_loss += w1*ell1_loss 
-        g_loss += bce_fake
-        # g_loss = self.loss_fn.gen_loss(imgs, fake_imgs) + bce_fake
+        # g_loss = self.loss_fn.gen_loss(imgs, fake_imgs)
+        # # Calculate w1 and w2
+        # e1 = 0 #self.hparams.e1
+        # e2 = 9 #self.hparams.e2
+        # assert e2 > e1
+        # ep = self.current_epoch
+        # if ep < e1:
+        #     w1 = 1
+        #     w2 = 0
+        # elif ep > e2:
+        #     w1 = 0
+        #     w2 = 1
+        # else:
+        #     w2 = (ep-e1) / (e2-e1)
+        #     w1 = (e2-ep) / (e2-e1)
+        # ell1_loss = 0
+        # for fake_ones, ones in zip(fake_imgs, imgs): #torch.mean(torch.abs(fake_imgs - imgs))
+        #     ell1_loss += torch.nn.L1Loss()(fake_ones, ones) 
+        # g_loss *= w2
+        # g_loss += w1*ell1_loss 
+        # g_loss += bce_fake
+        # # g_loss = self.loss_fn.gen_loss(imgs, fake_imgs) + bce_fake
+        # d_loss = self.loss_fn.dis_loss(imgs, fake_imgs)
+        # d_loss *= w2
+        # d_loss += w1*ell1_loss 
+        # Lambda = self.hparams.Lambda
+        # c_loss = bce_real + Lambda*bce_fake
+
+        g_loss = self.loss_fn.gen_loss(imgs, fake_imgs) + bce_fake
         d_loss = self.loss_fn.dis_loss(imgs, fake_imgs)
-        d_loss *= w2
-        d_loss += w1*ell1_loss 
         Lambda = self.hparams.Lambda
         c_loss = bce_real + Lambda*bce_fake
-
-
         # train generator
         if optimizer_idx == 0:
             tqdm_dict = {'g_loss': g_loss}
@@ -278,6 +281,7 @@ class MSGGAN(LightningModule):
         transforms[1] = []
 
         df=pd.read_csv(os.path.join(self.hparams.data, 'covid_train_v5.csv'))
+        df['Non_Covid'] = 1 - df['Covid']
         balancing='up'
         if balancing == 'up':
             df_majority = df[df[self.hparams.pathology]==0]
@@ -291,14 +295,26 @@ class MSGGAN(LightningModule):
             df_upsampled = pd.concat([df_majority, df_minority_upsampled])
             df = df_upsampled
 
-        dset = (
-            ImageList.from_df(df=df, path=os.path.join(self.hparams.data, 'data'), cols='Images')
-            .split_by_rand_pct(0.0, seed=hparams.seed)
-            .label_from_df(cols=['Covid', 'Airspace_Opacity', 'Consolidation', 'Pneumonia'], label_cls=MultiCategoryList)
-            .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
-            .databunch(bs=self.hparams.batch, num_workers=32)
-            .normalize(imagenet_stats)
-        )
+        if self.hparams.types==4:
+            dset = (
+                ImageList.from_df(df=df,
+                    path=os.path.join(self.hparams.data, 'data'), cols='Images')
+                .split_by_rand_pct(0.0, seed=self.hparams.seed)
+                .label_from_df(cols=['Covid', 'Airspace_Opacity', 'Consolidation', 'Pneumonia'], label_cls=MultiCategoryList)
+                .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
+                .databunch(bs=self.hparams.batch, num_workers=8)
+                .normalize(imagenet_stats)
+            )
+        elif self.hparams.types==2:
+            dset = (
+                ImageList.from_df(df=df,
+                    path=os.path.join(self.hparams.data, 'data'), cols='Images')
+                .split_by_rand_pct(0.0, seed=self.hparams.seed)
+                .label_from_df(cols=['Covid', 'Non_Covid'], label_cls=MultiCategoryList)
+                .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
+                .databunch(bs=self.hparams.batch, num_workers=8)
+                .normalize(imagenet_stats)
+            )
         return dset.train_dl.dl, dset.valid_dl.dl
 
     def eval_dataloader(self):
@@ -314,16 +330,27 @@ class MSGGAN(LightningModule):
         transforms[1] = []
 
         df=pd.read_csv(os.path.join(self.hparams.data, 'covid_test_v5.csv'))
-
-        dset = (
-            ImageList.from_df(df=df, 
-                path=os.path.join(self.hparams.data, 'data'), cols='Images')
-            .split_by_rand_pct(1.0, seed=hparams.seed)
-            .label_from_df(cols=['Covid', 'Airspace_Opacity', 'Consolidation', 'Pneumonia'], label_cls=MultiCategoryList)
-            .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
-            .databunch(bs=self.hparams.batch, num_workers=32)
-            .normalize(imagenet_stats)
-        )
+        df['Non_Covid'] = 1 - df['Covid']
+        if self.hparams.types==4:
+            dset = (
+                ImageList.from_df(df=df,
+                    path=os.path.join(self.hparams.data, 'data'), cols='Images')
+                .split_by_rand_pct(1.0, seed=self.hparams.seed)
+                .label_from_df(cols=['Covid', 'Airspace_Opacity', 'Consolidation', 'Pneumonia'], label_cls=MultiCategoryList)
+                .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
+                .databunch(bs=self.hparams.batch, num_workers=8)
+                .normalize(imagenet_stats)
+            )
+        elif self.hparams.types==2:
+            dset = (
+                ImageList.from_df(df=df,
+                    path=os.path.join(self.hparams.data, 'data'), cols='Images')
+                .split_by_rand_pct(1.0, seed=self.hparams.seed)
+                .label_from_df(cols=['Covid', 'Non_Covid'], label_cls=MultiCategoryList)
+                .transform(transforms, size=self.hparams.shape, padding_mode='zeros')
+                .databunch(bs=self.hparams.batch, num_workers=8)
+                .normalize(imagenet_stats)
+            )
         return dset.train_dl.dl, dset.valid_dl.dl
 
     def train_dataloader(self):
@@ -341,10 +368,10 @@ class MSGGAN(LightningModule):
         # log sampled images
         self.fake_imgs = self.gen(z)[-1]
 
-        grid = torchvision.utils.make_grid(self.fake_imgs[:batchs] / 2.0 + 0.5, normalize=True, nrow=5)
+        grid = torchvision.utils.make_grid(self.fake_imgs[:batchs], normalize=True, nrow=5)
         self.logger.experiment.add_image(f'fake_imgs', grid, self.current_epoch)
 
-        grid = torchvision.utils.make_grid(self.real_imgs[:batchs] / 2.0 + 0.5, normalize=True, nrow=5)
+        grid = torchvision.utils.make_grid(self.real_imgs[:batchs], normalize=True, nrow=5)
         self.logger.experiment.add_image(f'real_imgs', grid, self.current_epoch)
 
         if self.current_epoch==1:
@@ -402,10 +429,10 @@ class MSGGAN(LightningModule):
         # log sampled images
         self.fake_imgs = self.gen(z)[-1]
 
-        grid = torchvision.utils.make_grid( (self.fake_imgs[:batchs]), normalize=True, nrow=5)
+        grid = torchvision.utils.make_grid(self.fake_imgs[:batchs], normalize=True, nrow=5)
         self.logger.experiment.add_image(f'fake_imgs', grid, self.current_epoch)
 
-        grid = torchvision.utils.make_grid( (self.real_imgs[:batchs]), normalize=True, nrow=5)
+        grid = torchvision.utils.make_grid(self.real_imgs[:batchs], normalize=True, nrow=5)
         self.logger.experiment.add_image(f'real_imgs', grid, self.current_epoch)
 
         # self.viz = nn.Sequential(
